@@ -1,12 +1,25 @@
 #include <SFML/Audio.hpp>
 #include <SDL2/SDL.h>
+#include <SDL2/SDL_timer.h>
 #include <SFML/Network.hpp>
 #include <iostream>
-#include "SDL_render.h"
-#include "SDL_video.h"
 #include "imgui/imgui.h"
 #include "imgui/backends/imgui_impl_sdl2.h"
 #include "imgui/backends/imgui_impl_sdlrenderer2.h"
+#include <vector>
+
+#ifdef __linux__
+#include "src/backends/linux/nmbackend.hpp"
+#define BACKEND_POLL_DELAY 30000
+#else
+#error "No supported OS."
+#endif
+
+Uint32 timerCallback(Uint32 interval, void *p) {
+    Backend* backend = static_cast<Backend*>(p);
+    backend->beginDiscovery();
+    return interval;
+}
 
 int main() {
     // Init SDL
@@ -44,9 +57,15 @@ int main() {
     ImGui_ImplSDL2_InitForSDLRenderer(window, renderer);
     ImGui_ImplSDLRenderer2_Init(renderer);
 
-    // main loop
+    // Decide which backend to use
+    #ifdef __linux__
+    Backend *newBackend = new NmBackend();
+    #endif
 
+    // main loop
     bool done = false;
+    SDL_TimerID pollTimer = -1; // A timer to poll the backend for new peers.
+    std::vector<std::string> peerList;
     while (!done) {
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
@@ -87,19 +106,45 @@ int main() {
         ImGui::SetWindowPos(ImVec2(0.0f,0.0f));
         ImGui::SetWindowSize(ImGui::GetIO().DisplaySize);
         #endif
-        //
 
-        ImGui::Text("This is text.");
+        ImGui::Text("Devices near you...");
+
+        // Make calls to backend, starting with peer list
+
+        if (pollTimer == -1) {
+            newBackend->beginDiscovery();
+            pollTimer = SDL_AddTimer(BACKEND_POLL_DELAY,
+                timerCallback,
+                newBackend);
+
+        }
+
+        peerList = newBackend->GetPeers();
+        ImGui::BeginChild("Scrolling");
+        if ((int)peerList.size() == 0) {
+            ImGui::Text("No devices found.");
+        } else {
+            for (int i = 0; i <(int) peerList.size(); i ++) {
+                ImGui::Text("%s", peerList[i].c_str());
+            }
+        }
+        ImGui::EndChild();
+
+
+
         ImGui::End();
         ImGui::PopStyleVar(2);
-        // Render window
 
+        // Render window
         ImGui::Render();
         SDL_RenderSetScale(renderer, io.DisplayFramebufferScale.x, io.DisplayFramebufferScale.y);
         SDL_RenderClear(renderer);
         ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData(), renderer);
         SDL_RenderPresent(renderer);
     }
+
+    delete(newBackend);
+
     ImGui_ImplSDLRenderer2_Shutdown();
     ImGui_ImplSDL2_Shutdown();
     ImGui::DestroyContext();

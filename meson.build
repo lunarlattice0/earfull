@@ -16,11 +16,12 @@ earfull_deps = [
 
 earfull_source_files = [
     'src/main.cpp',
-    'src/backends/linux/nmbackend.cpp',
 ]
 
 earfull_include_directories = [
     'src/imgui',
+    'src/backends',
+    'src/backends/linux',
 ]
 
 imgui_source_files = [
